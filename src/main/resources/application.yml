@@ -1,0 +1,80 @@
+app:
+  storage:
+    strategy: IN_MEMORY  # IN_MEMORY, в дальнейшем попробовать другие варианты
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/userdb
+    username: user
+    password: password
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      connection-timeout: 30000
+
+  liquibase:
+    enabled: true
+    change-log: classpath:/changelog/db.changelog-master.xml
+
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  kafka:
+    bootstrap-servers: localhost:9093
+    properties:
+      security:
+        protocol: PLAINTEXT
+    topics:
+      cdc-topic: postgres-server.public.users
+      output-topic-tumbling: user-activity-stats-tumbling
+      output-topic-hopping: user-activity-stats-hopping
+      output-topic-session: user-activity-stats-session
+
+    streams:
+      application-id: user-activity-streams
+      auto-startup: true
+      properties:
+        default:
+          key:
+            serde: org.apache.kafka.common.serialization.Serdes$StringSerde
+          value:
+            serde: org.springframework.kafka.support.serializer.JsonSerde
+
+
+debezium:
+  host: http://localhost:8083/connectors/
+  name: postgres-connector
+  database:
+    hostname: localhost
+    port: 5432
+    user: user
+    password: password
+    dbname: userdb
+    schema: public
+  topic-prefix: postgres-server
+
+server:
+  port: 8080
+
+logging:
+  level:
+    com.user.activity.monitoring: DEBUG
+    org.apache.kafka: INFO
+    io.debezium: debug
+    org.springframework.kafka: INFO
+    liquibase: debug
+    root: info
+
+management:
+  endpoints:
+    health:
+      show-details: always
+    web:
+      exposure:
+        include: "health,info,metrics,prometheus"
