@@ -11,8 +11,8 @@
 - [Структура проекта](#структура-проекта)
 - [API Endpoints](#api-endpoints)
 - [Запуск проекта](#запуск-проекта)
-- [Мониторинг и логирование](#мониторинг-и-логирование)
-- [Troubleshooting](#troubleshooting)
+- [Тестирование проекта](#тестирование-проекта)
+- [Лицензия](#лицензия)
 
 ---
 
@@ -177,3 +177,171 @@ docker exec -it kafka kafka-console-consumer \
   --topic user-activity-stats-session \
   --from-beginning
 ```
+
+## Запуск проекта
+1. Клонирование репозитория
+
+```bash
+git clone https://github.com/your-repo/user-activity-monitoring.git
+cd user-activity-monitoring
+```
+
+2. Запуск инфраструктуры
+```bash
+docker-compose up -d
+```
+
+3. Запустить Spring Boot приложение в классе UserActivityMonitoringApplication.java
+
+
+4. Проверка работоспособности
+```bash
+curl -X POST http://localhost:8080/api/users \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Тест",
+    "email": "testov@test.com",
+    "action": "TEST"
+  }'
+``` 
+
+### Добавление настроек SSL для Spring Boot приложение:
+
+```
+# application.yml
+spring.kafka.properties.security.protocol=SSL
+spring.kafka.ssl.trust-store-location=classpath:ssl/kafka.client.truststore.jks
+spring.kafka.ssl.trust-store-password=changeit
+```
+
+## Тестирование проекта
+
+###  На данный момент action может быть любой строкой.
+
+Проверьте подключение к Debezium. В приложении регистрации настроена при запуске приложения, поэтому нужно только проверить.
+```bash
+curl http://localhost:8083/connectors/postgres-connector/status
+```
+
+1. Сгенерировать пользователя
+```bash
+curl -X POST http://localhost:8080/api/users \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Блинчик Пирожков",
+    "email": "coolpancake@test.com",
+    "action": "REGISTER"
+  }'
+```
+Должен вернуться ответ
+```
+{
+  "id": 1, //для примера 1, после проверки у вас может быть другой идентификатор
+  "name": "Блинчик Пирожков",
+  "email": "coolpancake@test.com",
+  "action": "REGISTER",
+  "isBlocked": false,
+  "createdAt": "2026-03-26T12:00:00"
+}
+```
+
+2. Получить список пользователей.
+```bash
+curl http://localhost:8080/api/users
+```
+
+3. Обновить пользователя.
+```bash
+curl -X PUT http://localhost:8080/api/users/1 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Блинчик Пирожков",
+    "email": "coolpancake@test.com",
+    "action": "UPDATE_PROFILE"
+  }'
+```
+
+4. Проверить, что сообщение появилось в топике Kafka с изменениями пользователя.
+```bash
+docker exec -it kafka kafka-console-consumer \
+  --bootstrap-server localhost:9093 \
+  --topic postgres-server.public.users \
+  --from-beginning \
+  --max-messages 1
+```
+Так же для удобства все сообщения залогированы в приложении, вы их можете увидеть в консоли.
+
+5. Проверка агрегации в Tumbling Window за 2 минуты с задержкой 30 секунд.
+``` bash
+docker exec -it kafka kafka-console-consumer \
+  --bootstrap-server localhost:9093 \
+  --topic user-activity-stats-tumbling \
+  --from-beginning
+```
+
+6. Проверка скользящего среднего за 2 минуты.
+``` bash
+docker exec -it kafka kafka-console-consumer \
+  --bootstrap-server localhost:9093 \
+  --topic user-activity-stats-hopping \
+  --from-beginning
+```
+
+7. Проверка блокировки пользователя.
+   Создание спам-активности (более 5 действий)
+```bash
+# Создать пользователя
+curl -X POST http://localhost:8080/api/users \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Спаммер",
+    "email": "spammer@test.com",
+    "action": "LOGIN"
+  }'
+
+# Выполнить 5 быстрых обновлений (спам) ID который вернется в ответе создания пользователя
+for i in {1..5}; do
+  curl -X PUT http://localhost:8080/api/users/3 \
+    -H "Content-Type: application/json" \
+    -d "{
+      \"name\": \"Спаммер\",
+      \"email\": \"spammer@test.com\",
+      \"action\": \"SPAM_$i\"
+    }"
+done
+```
+Проверяем, что заблокирован:
+
+``` bash
+docker exec -it kafka kafka-console-consumer \
+  --bootstrap-server localhost:9093 \
+  --topic user-activity-stats-session \
+  --from-beginning
+```
+
+```bash
+curl -X PUT http://localhost:8080/api/users/3 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Спаммер",
+    "email": "spammer@test.com",
+    "action": "TRY_UPDATE"
+  }'
+```
+Должен вернуться ответ в виде JSON:
+```
+{
+  "status": 403,
+  "error": "Пользователь заблокирован",
+  "message": "Пользователь с id 3 заблокирован до 2026-03-26T12:05:00",
+  "path": "/api/users/3",
+  "timestamp": "2024-03-26T12:03:00",
+  "userId": 3,
+  "unblockTime": "2024-03-26T12:05:00"
+}
+```
+Блокировка длится 2 минуты. В message Вы можете увидеть до какого времени назначена блокировка.
+Она снимается автоматически шедулером, поэтому спустя 2 минуты Вы снова можете проверить апдейт пользователя.
+
+## 📜 Лицензия
+© 2026. Данный проект распространяется под лицензией [MIT License](https://choosealicense.com/licenses/mit/)

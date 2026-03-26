@@ -142,7 +142,7 @@ public class UserActivityStreams {
                                 count == null ? 0 : count
                         )
                 )
-                .filter((windowedKey, count) -> count >= 2)
+                .filter((windowedKey, count) -> count >= 5)
                 .map((windowedKey, count) -> {
                     // Преобразуем для отправки в топик
                     String outputKey = windowedKey.key().toString();
