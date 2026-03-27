@@ -2,7 +2,8 @@ package com.user.activity.monitoring.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.user.activity.monitoring.model.Spammer;
+import com.user.activity.monitoring.enums.Action;
+import com.user.activity.monitoring.model.UserCountActivity;
 import com.user.activity.monitoring.model.UserActivity;
 import com.user.activity.monitoring.serializer.JsonSerde;
 import lombok.RequiredArgsConstructor;
@@ -12,6 +13,7 @@ import org.apache.kafka.common.utils.Bytes;
 import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.kstream.*;
+import org.apache.kafka.streams.kstream.internals.SessionWindow;
 import org.apache.kafka.streams.state.WindowStore;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -42,7 +44,7 @@ public class UserActivityStreams {
     private String outputTopicForSession;
 
     private final ActivityStorageService activityStorageService;
-    private final JsonSerde<Spammer> spamSerde = new JsonSerde<>(Spammer.class);
+    private final JsonSerde<UserCountActivity> userSerde = new JsonSerde<>(UserCountActivity.class);
 
     @Bean
     public KStream<Long, UserActivity> buildTopology(StreamsBuilder streamsBuilder) {
@@ -91,14 +93,14 @@ public class UserActivityStreams {
                 .map((windowedKey, count) -> {
                     // Преобразуем для отправки в топик
                     String outputKey = windowedKey.key().toString();
-                    Spammer outputValue = Spammer
+                    UserCountActivity outputValue = UserCountActivity
                             .builder()
                             .id(windowedKey.key())
                             .count(count)
                             .build();
                     return KeyValue.pair(outputKey, outputValue);
                 })
-                .to(outputTopicForTumbling, Produced.with(Serdes.String(), spamSerde));
+                .to(outputTopicForTumbling, Produced.with(Serdes.String(), userSerde));
 
 
         // Скользящее среднее за 2 минуты
@@ -118,42 +120,47 @@ public class UserActivityStreams {
                 .map((windowedKey, count) -> {
                     // Преобразуем для отправки в топик
                     String outputKey = windowedKey.key().toString();
-                    Spammer outputValue = Spammer
+                    UserCountActivity outputValue = UserCountActivity
                             .builder()
                             .id(windowedKey.key())
                             .count(count)
                             .build();
                     return KeyValue.pair(outputKey, outputValue);
                 })
-                .to(outputTopicForHopping, Produced.with(Serdes.String(), spamSerde));
+                .to(outputTopicForHopping, Produced.with(Serdes.String(), userSerde));
 
-        // Анализ пользовательских сессий за 10 секунд, если больше 5, то спамер
+        // Анализ пользовательских сессий: сессия закрывается после 3 секунд неактивности
         KTable<Windowed<Long>, Long> sessionWindowCounts = activityStream
                 .groupByKey(Grouped.with(Serdes.Long(), new JsonSerde<>(UserActivity.class)))
-                .windowedBy(TimeWindows.ofSizeWithNoGrace(Duration.ofSeconds(10)))
+                .windowedBy(SessionWindows
+                        .ofInactivityGapWithNoGrace(Duration.ofSeconds(3)))
                 .count(Materialized.as("session-window-counts"));
 
         sessionWindowCounts.toStream()
-                .peek((windowedKey, count) ->
-                        log.info("Анализ пользовательских сессий за 10 секунд [{} - {}]: User {} actions = {}",
-                                formatTime(windowedKey.window().start()),
-                                formatTime(windowedKey.window().end()),
-                                windowedKey.key(),
-                                count == null ? 0 : count
-                        )
-                )
-                .filter((windowedKey, count) -> count >= 5)
-                .map((windowedKey, count) -> {
-                    // Преобразуем для отправки в топик
-                    String outputKey = windowedKey.key().toString();
-                    Spammer outputValue = Spammer
-                            .builder()
-                            .id(windowedKey.key())
-                            .count(count)
-                            .build();
-                    return KeyValue.pair(outputKey, outputValue);
+                .peek((windowedKey, count) -> {
+                    SessionWindow sessionWindow = (SessionWindow) windowedKey.window();
+                    log.info("Сессия пользователя {}: {} действий, длительность {} сек ({} - {})",
+                            windowedKey.key(),
+                            count,
+                            (sessionWindow.end() - sessionWindow.start()) / 1000,
+                            formatTime(sessionWindow.start()),
+                            formatTime(sessionWindow.end())
+                    );
                 })
-                .to(outputTopicForSession, Produced.with(Serdes.String(), spamSerde));
+                .filter((windowedKey, count) -> count != null)
+                .map((windowedKey, count) -> {
+                    return KeyValue.pair(
+                            windowedKey.key().toString(),
+                            UserCountActivity.builder()
+                                    .id(windowedKey.key())
+                                    .count(count)
+                                    .build()
+                    );
+                })
+                .to(outputTopicForSession, Produced.with(Serdes.String(), userSerde));
+
+
+
 
         return activityStream;
     }
@@ -186,8 +193,8 @@ public class UserActivityStreams {
             }
 
             Long userId = dataNode.has("id") ? dataNode.get("id").asLong() : null;
-            String userName = dataNode.has("name") ? dataNode.get("name").asText() : "Unknown";
-            String action = dataNode.has("action") ? dataNode.get("action").asText() : "UNKNOWN";
+            String userName = dataNode.has("name") ? dataNode.get("name").asText() : null;
+            String action = dataNode.has("action") ? dataNode.get("action").asText() : Action.UNKNOWN.name();
             String email = dataNode.has("email") ? dataNode.get("email").asText() : "";
 
             if (userId == null) {
@@ -201,7 +208,7 @@ public class UserActivityStreams {
             return UserActivity.builder()
                     .userId(userId)
                     .userName(userName)
-                    .action(action)
+                    .action(Action.getAction(action))
                     .email(email)
                     .eventTime(System.currentTimeMillis())
                     .build();

@@ -216,7 +216,14 @@ spring.kafka.ssl.trust-store-password=changeit
 
 ## Тестирование проекта
 
-###  На данный момент action может быть любой строкой.
+###  На данный момент action может быть только из списка.
+```
+    REGISTER("Регистрация")
+    UPDATE("Обновление")
+    SCROLL("Пролистывание")
+    DELETE("Удаление")
+    UNKNOWN("Неизвестное действие")
+```
 
 Проверьте подключение к Debezium. В приложении регистрации настроена при запуске приложения, поэтому нужно только проверить.
 ```bash
@@ -295,7 +302,7 @@ curl -X POST http://localhost:8080/api/users \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Спаммер",
-    "email": "spammer@test.com",
+    "email": "userCountActivity@test.com",
     "action": "LOGIN"
   }'
 
@@ -305,7 +312,7 @@ for i in {1..5}; do
     -H "Content-Type: application/json" \
     -d "{
       \"name\": \"Спаммер\",
-      \"email\": \"spammer@test.com\",
+      \"email\": \"userCountActivity@test.com\",
       \"action\": \"SPAM_$i\"
     }"
 done
@@ -324,7 +331,7 @@ curl -X PUT http://localhost:8080/api/users/3 \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Спаммер",
-    "email": "spammer@test.com",
+    "email": "userCountActivity@test.com",
     "action": "TRY_UPDATE"
   }'
 ```
@@ -342,6 +349,12 @@ curl -X PUT http://localhost:8080/api/users/3 \
 ```
 Блокировка длится 2 минуты. В message Вы можете увидеть до какого времени назначена блокировка.
 Она снимается автоматически шедулером, поэтому спустя 2 минуты Вы снова можете проверить апдейт пользователя.
+
+8. Проверка работы ретраев и отправки сообщения в DLQ.
+```bash
+docker exec -it kafka kafka-console-producer --bootstrap-server localhost:9093 --topic user-activity-stats-session --property "parse.key=true" --property "key.separator=:"
+```
+Далее ввести 1:{"id""count":5} и отправить.
 
 ## 📜 Лицензия
 © 2026. Данный проект распространяется под лицензией [MIT License](https://choosealicense.com/licenses/mit/)

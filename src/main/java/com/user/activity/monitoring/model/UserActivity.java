@@ -1,5 +1,6 @@
 package com.user.activity.monitoring.model;
 
+import com.user.activity.monitoring.enums.Action;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -15,7 +16,7 @@ import lombok.NoArgsConstructor;
 public class UserActivity {
     private Long userId;
     private String userName;
-    private String action;
+    private Action action;
     private Long eventTime;
     private Long windowStart;
     private Long windowEnd;

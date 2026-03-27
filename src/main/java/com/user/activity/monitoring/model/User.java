@@ -1,5 +1,6 @@
 package com.user.activity.monitoring.model;
 
+import com.user.activity.monitoring.enums.Action;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -29,7 +30,8 @@ public class User {
     private String email;
 
     @Column(name = "action")
-    private String action;
+    @Enumerated(EnumType.STRING)
+    private Action action;
 
     @Column(name = "blocked_at")
     private LocalDateTime blockedAt;

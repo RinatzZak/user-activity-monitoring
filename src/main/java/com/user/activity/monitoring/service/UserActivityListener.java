@@ -2,11 +2,14 @@ package com.user.activity.monitoring.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.user.activity.monitoring.model.Spammer;
+import com.user.activity.monitoring.model.UserCountActivity;
 import com.user.activity.monitoring.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.kafka.annotation.RetryableTopic;
+import org.springframework.kafka.retrytopic.DltStrategy;
+import org.springframework.retry.annotation.Backoff;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -21,13 +24,24 @@ public class UserActivityListener {
     private final UserRepository repository;
     private final ObjectMapper objectMapper;
 
+
+    @RetryableTopic(
+            kafkaTemplate = "kafkaTemplate",
+            attempts = "3",
+            backoff = @Backoff(
+                    delay = 2000,
+                    multiplier = 2
+            ),
+            dltStrategy = DltStrategy.FAIL_ON_ERROR,
+            dltTopicSuffix = ".ERROR"
+    )
     @KafkaListener(topics = "user-activity-stats-session", groupId = "user-activity")
     public void handleActivity(String message) {
         log.info("Блокируем нарушителя {}", message);
-        Spammer spammer = null;
+        UserCountActivity userCountActivity = null;
         try {
-            spammer = objectMapper.readValue(message, Spammer.class);
-            var user = repository.findById(spammer.getId());
+            userCountActivity = objectMapper.readValue(message, UserCountActivity.class);
+            var user = repository.findById(userCountActivity.getId());
             if (user.isPresent()) {
                 var forSave = user.get();
                 forSave.setIsBlocked(true);
@@ -35,9 +49,13 @@ public class UserActivityListener {
                 repository.save(forSave);
                 log.info("Пользователь с id: {}, заблокирован на 2 минуты", forSave.getId());
             } else {
-                log.info("Пользователь с id: {}, не найден", spammer.getId());
+                log.info("Пользователь с id: {}, не найден", userCountActivity.getId());
             }
         } catch (JsonProcessingException e) {
+            log.error("Ошибка десериализации сообщения: {}", message, e);
+            throw new IllegalArgumentException("Ошибка десериализации сообщения", e);
+        } catch (Exception e) {
+            log.error("Ошибка обработки сообщения: {}", message, e);
             throw new RuntimeException(e);
         }
     }
@@ -50,16 +68,16 @@ public class UserActivityListener {
         log.info("Топик:user-activity-stats-hopping. Получено сообщение: {}", message);
 
         try {
-            Spammer spammer = objectMapper.readValue(message, Spammer.class);
+            UserCountActivity userCountActivity = objectMapper.readValue(message, UserCountActivity.class);
             log.info("User {} сделал {} действий за последние 2 минуты (с шагом 30 сек)",
-                    spammer.getId(), spammer.getCount());
+                    userCountActivity.getId(), userCountActivity.getCount());
 
             int hoppingThreshold = 8;
-            if (spammer.getCount() > hoppingThreshold) {
+            if (userCountActivity.getCount() > hoppingThreshold) {
                 log.warn("Высокая активность! User {} сделал {} действий",
-                        spammer.getId(), spammer.getCount());
+                        userCountActivity.getId(), userCountActivity.getCount());
 
-                sendAlert(spammer.getId(), spammer.getCount());
+                sendAlert(userCountActivity.getId(), userCountActivity.getCount());
             }
 
         } catch (Exception e) {
@@ -75,15 +93,15 @@ public class UserActivityListener {
         log.info("Топик: user-activity-stats-session. Получено сообщение: {}", message);
 
         try {
-            Spammer spammer = objectMapper.readValue(message, Spammer.class);
+            UserCountActivity userCountActivity = objectMapper.readValue(message, UserCountActivity.class);
 
             log.info("User {} сделал {} действий за сессию",
-                    spammer.getId(), spammer.getCount());
+                    userCountActivity.getId(), userCountActivity.getCount());
 
             // Для сессий можно анализировать поведение
-            if (spammer.getCount() > 15) {
+            if (userCountActivity.getCount() > 15) {
                 log.warn("Подозрительная сессия! User {} сделал {} действий",
-                        spammer.getId(), spammer.getCount());
+                        userCountActivity.getId(), userCountActivity.getCount());
             }
 
         } catch (Exception e) {

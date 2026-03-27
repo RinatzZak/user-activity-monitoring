@@ -8,7 +8,7 @@ import lombok.Data;
  */
 @Data
 @Builder
-public class Spammer {
+public class UserCountActivity {
     private Long id;
     private Long count;
 }
