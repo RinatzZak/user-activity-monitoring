@@ -205,15 +205,6 @@ curl -X POST http://localhost:8080/api/users \
   }'
 ``` 
 
-### Добавление настроек SSL для Spring Boot приложение:
-
-```
-# application.yml
-spring.kafka.properties.security.protocol=SSL
-spring.kafka.ssl.trust-store-location=classpath:ssl/kafka.client.truststore.jks
-spring.kafka.ssl.trust-store-password=changeit
-```
-
 ## Тестирование проекта
 
 ###  На данный момент action может быть только из списка.
