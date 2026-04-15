@@ -25,17 +25,52 @@ spring:
         format_sql: true
         dialect: org.hibernate.dialect.PostgreSQLDialect
 
+  #Для работы без сертификатов
+#  kafka:
+#    bootstrap-servers: localhost:9093
+#    properties:
+#      security:
+#        protocol: PLAINTEXT
+#    topics:
+#      cdc-topic: postgres-server.public.users
+#      output-topic-tumbling: user-activity-stats-tumbling
+#      output-topic-hopping: user-activity-stats-hopping
+#      output-topic-session: user-activity-stats-session
+#
+#    streams:
+#      application-id: user-activity-streams
+#      auto-startup: true
+#      properties:
+#        default:
+#          key:
+#            serde: org.apache.kafka.common.serialization.Serdes$StringSerde
+#          value:
+#            serde: org.springframework.kafka.support.serializer.JsonSerde
+
   kafka:
     bootstrap-servers: localhost:9093
     properties:
       security:
-        protocol: PLAINTEXT
+        protocol: SSL
+      ssl:
+        # Для самоподписанного сертификата отключаем проверку hostname
+        endpoint:
+          identification:
+            algorithm: ""
+        # Пути к сертификатам
+        trust-store-location: C:\Users\54421\IdeaProjects\user-activity-monitoring\docker\ssl\truststore.jks
+        trust-store-password: changeit
+        key-store-location: C:\Users\54421\IdeaProjects\user-activity-monitoring\docker\ssl\kafka.jks
+        key-store-password: changeit
+        key-password: changeit
+        # Явно указываем протокол
+        protocol: TLSv1.2
+        enabled-protocols: TLSv1.2
     topics:
       cdc-topic: postgres-server.public.users
       output-topic-tumbling: user-activity-stats-tumbling
       output-topic-hopping: user-activity-stats-hopping
       output-topic-session: user-activity-stats-session
-
     streams:
       application-id: user-activity-streams
       auto-startup: true
@@ -45,6 +80,21 @@ spring:
             serde: org.apache.kafka.common.serialization.Serdes$StringSerde
           value:
             serde: org.springframework.kafka.support.serializer.JsonSerde
+        # Дополнительные настройки для SSL в Streams
+        security:
+          protocol: SSL
+        ssl:
+          truststore:
+            location: C:\Users\54421\IdeaProjects\user-activity-monitoring\docker\ssl\truststore.jks
+            password: changeit
+          keystore:
+            location: C:\Users\54421\IdeaProjects\user-activity-monitoring\docker\ssl\kafka.jks
+            password: changeit
+          key:
+            password: changeit
+          endpoint:
+            identification:
+              algorithm: ""
 
 
 debezium:
@@ -70,6 +120,7 @@ logging:
     org.springframework.kafka: INFO
     liquibase: debug
     root: info
+    sun.security.ssl: DEBUG
 
 management:
   endpoints:

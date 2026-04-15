@@ -207,6 +207,48 @@ curl -X POST http://localhost:8080/api/users \
 
 ### Добавление настроек SSL для Spring Boot приложение:
 
+```bash
+cd .\docker\ssl
+
+# 1. Удаляем старые файлы
+Remove-Item *.jks, *.crt, *.key, *.pem, *.cer, *.csr, *.srl, *.ext -Force -ErrorAction SilentlyContinue
+
+# 2. Создаем CA сертификат
+openssl req -x509 -newkey rsa:4096 -keyout ca-key.pem -out ca-cert.pem -days 365 -subj "/CN=Kafka-CA" -passout pass:changeit -addext "basicConstraints=critical,CA:TRUE" -addext "keyUsage=critical,keyCertSign,cRLSign"
+
+# 3. Создаем keystore
+keytool -genkey -alias kafka -keyalg RSA -keysize 4096 -keystore kafka.jks -storepass changeit -keypass changeit -dname "CN=kafka" -validity 365
+
+# 4. Создаем CSR
+keytool -certreq -alias kafka -keystore kafka.jks -file kafka.csr -storepass changeit
+
+# 5. Создаем файл с SAN расширениями
+@"
+subjectAltName=DNS:kafka,DNS:localhost,IP:127.0.0.1
+extendedKeyUsage=serverAuth,clientAuth
+"@ | Out-File -FilePath san.ext -Encoding ascii
+
+# 6. Подписываем сертификат CA
+openssl x509 -req -CA ca-cert.pem -CAkey ca-key.pem -in kafka.csr -out kafka-cert.pem -days 365 -CAcreateserial -passin pass:changeit -extfile san.ext
+
+# 7. Импортируем CA в keystore
+keytool -import -alias caroot -file ca-cert.pem -keystore kafka.jks -storepass changeit -noprompt
+
+# 8. Импортируем подписанный сертификат
+keytool -import -alias kafka -file kafka-cert.pem -keystore kafka.jks -storepass changeit -noprompt
+
+# 9. Создаем truststore с CA
+keytool -import -alias caroot -file ca-cert.pem -keystore truststore.jks -storepass changeit -noprompt
+
+# 10. Создаем ssl_creds
+"changeit" | Out-File -FilePath ssl_creds -Encoding ascii -NoNewline
+
+# 11. Проверяем
+keytool -list -v -keystore truststore.jks -storepass changeit | Select-String -Pattern "IsCA"
+keytool -list -keystore kafka.jks -storepass changeit
+```
+
+
 ```
 # application.yml
 spring.kafka.properties.security.protocol=SSL
