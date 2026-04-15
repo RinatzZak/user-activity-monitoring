@@ -251,9 +251,7 @@ keytool -list -keystore kafka.jks -storepass changeit
 
 ```
 # application.yml
-spring.kafka.properties.security.protocol=SSL
-spring.kafka.ssl.trust-store-location=classpath:ssl/kafka.client.truststore.jks
-spring.kafka.ssl.trust-store-password=changeit
+Разблокировать всё, что связано с SSL.
 ```
 
 ## Тестирование проекта
