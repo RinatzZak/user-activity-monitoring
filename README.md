@@ -251,7 +251,7 @@ keytool -list -keystore kafka.jks -storepass changeit
 
 ```
 # application.yml
-Разблокировать всё, что связано с SSL.
+Разблокировать всё, что связано с SSL в KafkaConfig.java и application.yaml
 ```
 
 ## Тестирование проекта
@@ -304,7 +304,7 @@ curl -X PUT http://localhost:8080/api/users/1 \
   -d '{
     "name": "Блинчик Пирожков",
     "email": "coolpancake@test.com",
-    "action": "UPDATE_PROFILE"
+    "action": "UPDATE"
   }'
 ```
 
@@ -343,7 +343,7 @@ curl -X POST http://localhost:8080/api/users \
   -d '{
     "name": "Спаммер",
     "email": "userCountActivity@test.com",
-    "action": "LOGIN"
+    "action": "REGISTER"
   }'
 
 # Выполнить 5 быстрых обновлений (спам) ID который вернется в ответе создания пользователя
@@ -353,7 +353,7 @@ for i in {1..5}; do
     -d "{
       \"name\": \"Спаммер\",
       \"email\": \"userCountActivity@test.com\",
-      \"action\": \"SPAM_$i\"
+      \"action\": \"UPDATE\"
     }"
 done
 ```
@@ -372,7 +372,7 @@ curl -X PUT http://localhost:8080/api/users/3 \
   -d '{
     "name": "Спаммер",
     "email": "userCountActivity@test.com",
-    "action": "TRY_UPDATE"
+    "action": "UPDATE"
   }'
 ```
 Должен вернуться ответ в виде JSON:

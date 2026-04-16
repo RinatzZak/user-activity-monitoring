@@ -6,6 +6,7 @@ import com.user.activity.monitoring.model.UserCountActivity;
 import com.user.activity.monitoring.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.annotation.RetryableTopic;
 import org.springframework.kafka.retrytopic.DltStrategy;
@@ -21,6 +22,8 @@ import java.time.LocalDateTime;
 @Service
 @RequiredArgsConstructor
 public class UserActivityListener {
+    @Value("${app.block.threshold}")
+    private int blockThreshold;
     private final UserRepository repository;
     private final ObjectMapper objectMapper;
 
@@ -37,20 +40,28 @@ public class UserActivityListener {
     )
     @KafkaListener(topics = "user-activity-stats-session", groupId = "user-activity")
     public void handleActivity(String message) {
-        log.info("Блокируем нарушителя {}", message);
+        log.info("Обработка сообщения: {}", message);
         UserCountActivity userCountActivity = null;
         try {
             userCountActivity = objectMapper.readValue(message, UserCountActivity.class);
-            var user = repository.findById(userCountActivity.getId());
-            if (user.isPresent()) {
-                var forSave = user.get();
-                forSave.setIsBlocked(true);
-                forSave.setBlockedAt(LocalDateTime.now());
-                repository.save(forSave);
-                log.info("Пользователь с id: {}, заблокирован на 2 минуты", forSave.getId());
+
+            if (userCountActivity.getCount() >= blockThreshold) {
+                var user = repository.findById(userCountActivity.getId());
+                if (user.isPresent()) {
+                    var forSave = user.get();
+                    forSave.setIsBlocked(true);
+                    forSave.setBlockedAt(LocalDateTime.now());
+                    repository.save(forSave);
+                    log.info("Пользователь с id: {}, ЗАБЛОКИРОВАН! Действий за сессию: {}",
+                            forSave.getId(), userCountActivity.getCount());
+                } else {
+                    log.warn("Пользователь с id: {}, не найден", userCountActivity.getId());
+                }
             } else {
-                log.info("Пользователь с id: {}, не найден", userCountActivity.getId());
+                log.info("Пользователь с id: {}, не заблокирован. Действий за сессию: {} (порог: {})",
+                        userCountActivity.getId(), userCountActivity.getCount(), blockThreshold);
             }
+
         } catch (JsonProcessingException e) {
             log.error("Ошибка десериализации сообщения: {}", message, e);
             throw new IllegalArgumentException("Ошибка десериализации сообщения", e);
@@ -98,7 +109,6 @@ public class UserActivityListener {
             log.info("User {} сделал {} действий за сессию",
                     userCountActivity.getId(), userCountActivity.getCount());
 
-            // Для сессий можно анализировать поведение
             if (userCountActivity.getCount() > 15) {
                 log.warn("Подозрительная сессия! User {} сделал {} действий",
                         userCountActivity.getId(), userCountActivity.getCount());
