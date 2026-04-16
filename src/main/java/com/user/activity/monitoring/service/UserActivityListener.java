@@ -22,8 +22,12 @@ import java.time.LocalDateTime;
 @Service
 @RequiredArgsConstructor
 public class UserActivityListener {
-    @Value("${app.block.threshold}")
-    private int blockThreshold;
+    @Value("${app.block.threshold.session}")
+    private int sessionThreshold;
+    @Value("${app.block.threshold.hopping}")
+    private int hoppingThreshold;
+    @Value("${app.block.threshold.tumbling}")
+    private int tumblingThreshold;
     private final UserRepository repository;
     private final ObjectMapper objectMapper;
 
@@ -45,7 +49,7 @@ public class UserActivityListener {
         try {
             userCountActivity = objectMapper.readValue(message, UserCountActivity.class);
 
-            if (userCountActivity.getCount() >= blockThreshold) {
+            if (userCountActivity.getCount() >= sessionThreshold) {
                 var user = repository.findById(userCountActivity.getId());
                 if (user.isPresent()) {
                     var forSave = user.get();
@@ -59,7 +63,7 @@ public class UserActivityListener {
                 }
             } else {
                 log.info("Пользователь с id: {}, не заблокирован. Действий за сессию: {} (порог: {})",
-                        userCountActivity.getId(), userCountActivity.getCount(), blockThreshold);
+                        userCountActivity.getId(), userCountActivity.getCount(), sessionThreshold);
             }
 
         } catch (JsonProcessingException e) {
@@ -83,7 +87,7 @@ public class UserActivityListener {
             log.info("User {} сделал {} действий за последние 2 минуты (с шагом 30 сек)",
                     userCountActivity.getId(), userCountActivity.getCount());
 
-            int hoppingThreshold = 8;
+
             if (userCountActivity.getCount() > hoppingThreshold) {
                 log.warn("Высокая активность! User {} сделал {} действий",
                         userCountActivity.getId(), userCountActivity.getCount());
@@ -97,11 +101,11 @@ public class UserActivityListener {
     }
 
     /**
-     * Обработка Session Window (сессионные окна)
+     * Обработка Tumbling Window
      */
-    @KafkaListener(topics = "user-activity-stats-session", groupId = "user-activity")
+    @KafkaListener(topics = "${spring.kafka.topics.output-topic-tumbling}", groupId = "user-activity")
     public void handleSessionWindow(String message) {
-        log.info("Топик: user-activity-stats-session. Получено сообщение: {}", message);
+        log.info("Топик: user-activity-stats-tumbling. Получено сообщение: {}", message);
 
         try {
             UserCountActivity userCountActivity = objectMapper.readValue(message, UserCountActivity.class);
@@ -109,7 +113,7 @@ public class UserActivityListener {
             log.info("User {} сделал {} действий за сессию",
                     userCountActivity.getId(), userCountActivity.getCount());
 
-            if (userCountActivity.getCount() > 15) {
+            if (userCountActivity.getCount() > tumblingThreshold) {
                 log.warn("Подозрительная сессия! User {} сделал {} действий",
                         userCountActivity.getId(), userCountActivity.getCount());
             }

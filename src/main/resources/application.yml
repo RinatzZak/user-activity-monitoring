@@ -1,6 +1,9 @@
 app:
   block:
-    threshold: 5
+    threshold:
+      session: 5
+      hopping: 4
+      tumbling: 7
   storage:
     strategy: IN_MEMORY  # IN_MEMORY, в дальнейшем попробовать другие варианты
 
